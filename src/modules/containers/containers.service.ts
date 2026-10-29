@@ -21,12 +21,15 @@ export const toContainerDtos = (list: ContainerSnapshot[]): ContainerDto[] =>
   list.map((container) => {
     const dto: Partial<ContainerSnapshot> = { ...container };
     delete dto.imageId;
+    delete dto.createdAt;
     return dto as ContainerDto;
   });
 
 // Data internal: DTO + image id (untuk tabel images, tidak dikirim ke FE).
 export interface ContainerSnapshot extends ContainerDto {
   imageId: string;
+  // Waktu container dibuat = perkiraan waktu deploy image-nya.
+  createdAt: string;
 }
 
 // Satu putaran poll untuk semua container dan semua tab browser: list +
@@ -128,7 +131,12 @@ export class ContainersService implements OnApplicationBootstrap {
       memoryBytes,
       restartCount: inspect.RestartCount ?? 0,
       startedAt,
+      exitCode:
+        status === 'exited' || status === 'dead'
+          ? (inspect.State.ExitCode ?? null)
+          : null,
       imageId: inspect.Image,
+      createdAt: inspect.Created,
     };
   }
 }

@@ -15,14 +15,21 @@ export interface ImageUser {
   imageId: string;
   name: string;
   status: ContainerStatus;
+  exitCode: number | null;
+  createdAt: string;
 }
 
 const NONE = '<none>:<none>';
 
-// Satu baris per tag. Status:
-// - active   — dipakai container (apa pun statusnya)
-// - previous — ber-tag tapi tidak dipakai (kandidat rollback v1.1)
-// - dangling — tanpa tag (<none>), kandidat prune
+const latest = (dates: (string | undefined)[]) =>
+  dates
+    .filter((date): date is string => Boolean(date))
+    .sort()
+    .at(-1) ?? null;
+
+// Satu baris per tag; status lihat ImageState. `deployedAt` dari event
+// `container create` yang dicatat monitor; kalau belum ada (container dibuat
+// sebelum monitor dipasang), pakai waktu dibuatnya container pemakai.
 export const buildImageSummary = (
   images: RawImage[],
   users: ImageUser[],
@@ -41,14 +48,19 @@ export const buildImageSummary = (
 
   images.forEach((image) => {
     const tags = (image.RepoTags ?? []).filter((tag) => tag !== NONE);
-    const usedBy = (usersByImage.get(image.Id) ?? []).map(
-      ({ name, status }) => ({ name, status }),
-    );
+    const users = usersByImage.get(image.Id) ?? [];
+    const usedBy = users.map(({ name, status, exitCode }) => ({
+      name,
+      status,
+      exitCode,
+    }));
     const base = {
       id: image.Id,
       sizeBytes: image.Size,
       createdAt: new Date(image.Created * 1000).toISOString(),
-      deployedAt: deployedAt.get(image.Id)?.toISOString() ?? null,
+      deployedAt:
+        deployedAt.get(image.Id)?.toISOString() ??
+        latest(users.map((user) => user.createdAt)),
       usedBy,
     };
 
@@ -71,9 +83,21 @@ export const buildImageSummary = (
         ...base,
         repository: repo,
         tag,
-        state: usedBy.length > 0 ? 'active' : 'previous',
+        state: usedBy.length > 0 ? 'active' : 'unused',
       });
     });
+  });
+
+  // Ber-tag tapi tidak dipakai = "previous" hanya kalau repo yang sama
+  // sedang dipakai versi lain; selain itu sekadar image yang tidak terpakai
+  // (mis. alpine hasil `docker run` sekali).
+  const activeRepos = new Set(
+    rows.filter((row) => row.state === 'active').map((row) => row.repository),
+  );
+  rows.forEach((row) => {
+    if (row.state === 'unused' && activeRepos.has(row.repository)) {
+      row.state = 'previous';
+    }
   });
 
   return {

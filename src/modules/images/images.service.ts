@@ -43,6 +43,8 @@ export class ImagesService {
         imageId: c.imageId,
         name: c.name,
         status: c.status,
+        exitCode: c.exitCode,
+        createdAt: c.createdAt,
       })),
       deployedAt,
     );

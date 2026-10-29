@@ -12,4 +12,7 @@ export interface ContainerDto {
   memoryBytes: number;
   restartCount: number;
   startedAt: string | null;
+  // Exit code terakhir untuk container yang berhenti; null kalau masih
+  // jalan. Exit 0 = selesai normal (mis. job migrate), bukan masalah.
+  exitCode: number | null;
 }
