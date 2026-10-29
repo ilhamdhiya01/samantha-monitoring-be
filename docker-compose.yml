@@ -1,6 +1,8 @@
-# Tiga service monitor + proxy socket. Jalankan bersama service lain di VPS:
-#   docker compose up -d monitor-api
-# Kalau monitor mati, service lain tidak terpengaruh.
+# Dipakai di VPS (~/dashboard-monitoring/samantha-monitoring-be) dan lokal.
+# VPS: `docker compose pull && docker compose up -d` (lihat
+# .github/workflows/docker-publish.yml). Lokal: `docker compose up -d
+# monitor-db` saja, atau `--build` untuk mencoba image.
+# Kalau monitor mati, service lain di VPS tidak terpengaruh.
 
 x-logging: &logging
   driver: json-file
@@ -29,12 +31,13 @@ services:
     networks: [monitor]
     logging: *logging
 
-  # Terpisah dari Postgres tees-api: container, volume, port sendiri.
+  # Terpisah dari Postgres aplikasi lain: container, volume, port sendiri.
   # Port 5432 tidak di-publish (dev: lihat docker-compose.override.yml).
   monitor-db:
     image: postgres:16-alpine
     restart: unless-stopped
-    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
+    command:
+      ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
     environment:
       POSTGRES_USER: monitor
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di .env}
@@ -49,7 +52,9 @@ services:
     networks: [monitor]
     logging: *logging
 
+  # Job sekali jalan: prisma migrate deploy, lalu selesai.
   monitor-migrate:
+    image: ghcr.io/ilhamdhiya01/samantha-monitoring-be:${IMAGE_TAG:-latest}-migrator
     build:
       context: .
       target: migrator
@@ -63,6 +68,7 @@ services:
     logging: *logging
 
   monitor-api:
+    image: ghcr.io/ilhamdhiya01/samantha-monitoring-be:${IMAGE_TAG:-latest}
     build:
       context: .
       target: runner
@@ -74,6 +80,10 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       HOST_PROC: /host/proc
       HOST_ROOT: /host
+    # Loopback saja — belum ada login. Akses lewat SSH tunnel; FE
+    # (samantha-monitoring-fe) memanggilnya lewat network `monitor`.
+    ports:
+      - '127.0.0.1:3300:3001'
     volumes:
       # Resource host (bukan milik container), read-only.
       - /proc:/host/proc:ro
@@ -84,15 +94,26 @@ services:
       docker-proxy:
         condition: service_started
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1']
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:3001/api/v1/health', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks: [monitor]
     logging: *logging
 
 networks:
+  # Nama tetap: compose FE bergabung ke network ini (external).
   monitor:
     name: monitor
 

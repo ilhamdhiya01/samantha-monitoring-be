@@ -37,16 +37,23 @@ curl -N localhost:3001/api/v1/logs/<nama-container>/stream
 
 ## Deploy di VPS
 
-```bash
-cp .env.example .env    # isi POSTGRES_PASSWORD, FE_URL, TELEGRAM_*, HOST_IP
-docker compose -f docker-compose.yml up -d --build monitor-api
+Pola sama dengan project lain di VPS: GitHub Actions (`.github/workflows/docker-publish.yml`) menjalankan CI, mem-build image ke `ghcr.io/ilhamdhiya01/samantha-monitoring-be:latest` (+ `latest-migrator`), lalu SSH ke VPS dan menjalankan `docker compose pull && up -d`. Secrets repo: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
+
+Setup sekali di VPS (`~/dashboard-monitoring/samantha-monitoring-be`): salin `docker-compose.yml` dan buat `.env`:
+
+```
+POSTGRES_PASSWORD=<acak>
+FE_URL=http://localhost:3310
+HOST_IP=<ip vps>
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ```
 
-Service: `docker-proxy` (Docker API read-only, POST ditolak), `monitor-db`, `monitor-migrate` (sekali jalan), `monitor-api` (mount `/proc` dan `/` host read-only). Semua `restart: unless-stopped`, log driver `max-size 50m × 3`.
+Service: `docker-proxy` (Docker API read-only, POST ditolak), `monitor-db`, `monitor-migrate` (sekali jalan), `monitor-api` di `127.0.0.1:3300` (mount `/proc` dan `/` host read-only). Network `monitor` dipakai juga oleh FE. `docker-compose.override.yml` khusus dev — jangan disalin ke VPS.
 
-> **Belum ada login.** Jangan publish port 3001 ke internet; akses lewat SSH tunnel atau jaringan privat sampai auth selesai.
+> **Belum ada login.** Port hanya di loopback; buka lewat SSH tunnel: `ssh -L 3310:127.0.0.1:3310 ubuntu@<vps>` lalu `http://localhost:3310` (FE meneruskan `/api/v1` ke BE).
 
-Pasang uptime monitor eksternal (healthchecks.io / UptimeRobot) ke `GET /api/v1/health` — kalau VPS mati, monitor ini tidak bisa mengirim alert sendiri.
+Pasang uptime monitor eksternal ke `GET /api/v1/health` setelah ada domain — kalau VPS mati, monitor ini tidak bisa mengirim alert sendiri.
 
 ## Konfigurasi
 
