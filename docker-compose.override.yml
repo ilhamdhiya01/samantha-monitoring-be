@@ -1,0 +1,6 @@
+# Dev lokal: DB bisa diakses dari host (pnpm start:dev, prisma studio).
+# Loopback saja, port 5443 supaya tidak bentrok dengan Postgres lain.
+services:
+  monitor-db:
+    ports:
+      - '127.0.0.1:5443:5432'

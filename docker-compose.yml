@@ -1,0 +1,100 @@
+# Tiga service monitor + proxy socket. Jalankan bersama service lain di VPS:
+#   docker compose up -d monitor-api
+# Kalau monitor mati, service lain tidak terpengaruh.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: '3'
+
+services:
+  # Docker API read-only. Mount socket `:ro` saja TIDAK cukup: itu hanya
+  # melarang mengganti file socket, POST tetap jalan (= root di VPS).
+  # Proxy ini menolak semua yang tidak di-whitelist, termasuk POST.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      EVENTS: 1
+      INFO: 1
+      SYSTEM: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [monitor]
+    logging: *logging
+
+  # Terpisah dari Postgres tees-api: container, volume, port sendiri.
+  # Port 5432 tidak di-publish (dev: lihat docker-compose.override.yml).
+  monitor-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
+    environment:
+      POSTGRES_USER: monitor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di .env}
+      POSTGRES_DB: monitor_db
+    volumes:
+      - monitor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U monitor -d monitor_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [monitor]
+    logging: *logging
+
+  monitor-migrate:
+    build:
+      context: .
+      target: migrator
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://monitor:${POSTGRES_PASSWORD}@monitor-db:5432/monitor_db
+    depends_on:
+      monitor-db:
+        condition: service_healthy
+    networks: [monitor]
+    logging: *logging
+
+  monitor-api:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://monitor:${POSTGRES_PASSWORD}@monitor-db:5432/monitor_db
+      DOCKER_HOST: tcp://docker-proxy:2375
+      HOST_PROC: /host/proc
+      HOST_ROOT: /host
+    volumes:
+      # Resource host (bukan milik container), read-only.
+      - /proc:/host/proc:ro
+      - /:/host:ro
+    depends_on:
+      monitor-migrate:
+        condition: service_completed_successfully
+      docker-proxy:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [monitor]
+    logging: *logging
+
+networks:
+  monitor:
+    name: monitor
+
+volumes:
+  monitor_db_data:

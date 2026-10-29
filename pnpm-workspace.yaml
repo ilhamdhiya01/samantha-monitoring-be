@@ -1,0 +1,11 @@
+# Build script yang diizinkan. Sisanya native/opsional yang tidak dipakai:
+# ssh2/cpu-features (koneksi Docker lewat SSH), protobufjs (gRPC dockerode),
+# @parcel/watcher (watcher opsional).
+allowBuilds:
+  "@prisma/engines": true
+  prisma: true
+  "@parcel/watcher": false
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
+  unrs-resolver: false

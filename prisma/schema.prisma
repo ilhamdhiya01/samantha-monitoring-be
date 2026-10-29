@@ -1,0 +1,68 @@
+// Database monitor — terpisah dari Postgres tees-api (container, volume,
+// port sendiri) supaya monitor tetap jalan saat DB aplikasi bermasalah.
+// Log mentah tidak disimpan di sini; tetap di Docker.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Hitungan baris ERROR/WARN per jam per container. Retensi 30 hari.
+model ErrorHourly {
+  hour      DateTime @db.Timestamptz(3)
+  container String   @db.VarChar(128)
+  errors    Int      @default(0)
+  warnings  Int      @default(0)
+
+  @@id([hour, container])
+  @@map("error_hourly")
+}
+
+// Riwayat deploy = event Docker `container create`. Docker tidak menyimpan
+// event lama, jadi riwayat dimulai sejak monitor dipasang. Retensi 90 hari.
+model DeployEvent {
+  id         String   @id @default(cuid())
+  container  String   @db.VarChar(128)
+  imageId    String   @db.VarChar(80)
+  image      String   @db.VarChar(255)
+  occurredAt DateTime @db.Timestamptz(3)
+
+  @@index([imageId, occurredAt])
+  @@index([occurredAt])
+  @@map("deploy_events")
+}
+
+enum AlertKind {
+  CONTAINER_EXITED
+  RESTART_LOOP
+  DISK_USAGE
+  ERROR_SPIKE
+}
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+}
+
+// Satu baris per kejadian. Aktif = resolvedAt null. Cooldown dihitung dari
+// firedAt baris terakhir per (kind, container).
+model Alert {
+  id          String        @id @default(cuid())
+  kind        AlertKind
+  severity    AlertSeverity
+  // null untuk alert level host (disk).
+  container   String?       @db.VarChar(128)
+  title       String        @db.VarChar(200)
+  description String
+  firedAt     DateTime      @default(now()) @db.Timestamptz(3)
+  notifiedAt  DateTime?     @db.Timestamptz(3)
+  resolvedAt  DateTime?     @db.Timestamptz(3)
+
+  @@index([kind, container, firedAt])
+  @@index([resolvedAt])
+  @@map("alerts")
+}
