@@ -26,12 +26,14 @@ RUN node -e "\
 # ---- Stage 2: migrator (prisma migrate deploy, lalu selesai) ----
 FROM node:24.14.0-alpine AS migrator
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@12.8.1 --activate
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package.json ./package.json
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
+# Binary prisma langsung, bukan `pnpm exec`: pnpm 12 memverifikasi ulang
+# dependency sebelum exec dan gagal (ERR_PNPM_IGNORED_BUILDS) karena
+# allowBuilds di pnpm-workspace.yaml tidak ada di stage ini.
+CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]
 
 # ---- Stage 3: runtime ----
 FROM node:24.14.0-alpine AS runner
