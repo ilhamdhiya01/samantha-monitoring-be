@@ -1,4 +1,4 @@
-import type { ContainerStatus } from './dto/container.dto';
+import type { ContainerHealth, ContainerStatus } from './dto/container.dto';
 
 // Subset respons GET /containers/{id}/stats?stream=0.
 export interface RawContainerStats {
@@ -71,3 +71,16 @@ export const splitImageRef = (ref: string): { repo: string; tag: string } => {
   if (/^sha256:/.test(ref)) return { repo: ref.slice(7, 19), tag: '' };
   return { repo: withoutDigest, tag: 'latest' };
 };
+
+// State.Health ada hanya kalau image/compose punya healthcheck; "none" dan
+// status tak dikenal = tanpa healthcheck.
+export const toContainerHealth = (
+  status: string | undefined,
+): ContainerHealth | null =>
+  status === 'healthy' || status === 'unhealthy' || status === 'starting'
+    ? status
+    : null;
+
+// Docker memakai "0001-01-01T00:00:00Z" untuk waktu yang belum pernah terjadi.
+export const toDockerTime = (value: string | undefined): string | null =>
+  value && !value.startsWith('0001') ? value : null;

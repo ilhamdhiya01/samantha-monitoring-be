@@ -10,7 +10,9 @@ import {
   memoryFromStats,
   RawContainerStats,
   splitImageRef,
+  toContainerHealth,
   toContainerStatus,
+  toDockerTime,
 } from './container-stats';
 import type { ContainerDto } from './dto/container.dto';
 
@@ -116,10 +118,7 @@ export class ContainersService implements OnApplicationBootstrap {
     }
 
     const { repo, tag } = splitImageRef(inspect.Config.Image);
-    const startedAt =
-      inspect.State.StartedAt && !inspect.State.StartedAt.startsWith('0001')
-        ? inspect.State.StartedAt
-        : null;
+    const labels = inspect.Config.Labels ?? {};
 
     return {
       id: summary.Id.slice(0, 12),
@@ -130,11 +129,17 @@ export class ContainersService implements OnApplicationBootstrap {
       cpuPercent: Math.round(cpuPercent * 10) / 10,
       memoryBytes,
       restartCount: inspect.RestartCount ?? 0,
-      startedAt,
+      startedAt: toDockerTime(inspect.State.StartedAt),
       exitCode:
         status === 'exited' || status === 'dead'
           ? (inspect.State.ExitCode ?? null)
           : null,
+      project: labels['com.docker.compose.project'] ?? null,
+      service: labels['com.docker.compose.service'] ?? null,
+      health: toContainerHealth(inspect.State.Health?.Status),
+      oomKilled: inspect.State.OOMKilled ?? false,
+      finishedAt: toDockerTime(inspect.State.FinishedAt),
+      restartPolicy: inspect.HostConfig.RestartPolicy?.Name || 'no',
       imageId: inspect.Image,
       createdAt: inspect.Created,
     };

@@ -8,6 +8,7 @@ const DAY_MS = 86_400_000;
 export const ERROR_HOURLY_RETENTION_DAYS = 30;
 export const DEPLOY_EVENT_RETENTION_DAYS = 90;
 export const ALERT_RETENTION_DAYS = 90;
+export const CONTAINER_ACTION_RETENTION_DAYS = 365;
 
 // Supaya monitor sendiri tidak bikin disk penuh (risiko PRD).
 @Injectable()
@@ -21,21 +22,29 @@ export class RetentionService {
   async purge(now = Date.now()): Promise<void> {
     const before = (days: number) => new Date(now - days * DAY_MS);
     try {
-      const [errors, deploys, alerts] = await this.prisma.$transaction([
-        this.prisma.errorHourly.deleteMany({
-          where: { hour: { lt: before(ERROR_HOURLY_RETENTION_DAYS) } },
-        }),
-        this.prisma.deployEvent.deleteMany({
-          where: { occurredAt: { lt: before(DEPLOY_EVENT_RETENTION_DAYS) } },
-        }),
-        this.prisma.alert.deleteMany({
-          where: { resolvedAt: { lt: before(ALERT_RETENTION_DAYS) } },
-        }),
-      ]);
+      const [errors, deploys, alerts, actions] = await this.prisma.$transaction(
+        [
+          this.prisma.errorHourly.deleteMany({
+            where: { hour: { lt: before(ERROR_HOURLY_RETENTION_DAYS) } },
+          }),
+          this.prisma.deployEvent.deleteMany({
+            where: { occurredAt: { lt: before(DEPLOY_EVENT_RETENTION_DAYS) } },
+          }),
+          this.prisma.alert.deleteMany({
+            where: { resolvedAt: { lt: before(ALERT_RETENTION_DAYS) } },
+          }),
+          this.prisma.containerAction.deleteMany({
+            where: {
+              createdAt: { lt: before(CONTAINER_ACTION_RETENTION_DAYS) },
+            },
+          }),
+        ],
+      );
       this.logger.info('retention.purged', {
         errorHourly: errors.count,
         deployEvents: deploys.count,
         alerts: alerts.count,
+        containerActions: actions.count,
       });
     } catch (error) {
       this.logger.warn('retention.failed', {

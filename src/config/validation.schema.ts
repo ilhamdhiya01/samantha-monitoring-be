@@ -14,6 +14,11 @@ export const validationSchema = Joi.object({
     .uri({ scheme: ['tcp', 'http', 'https'] })
     .allow('')
     .optional(),
+  // Proxy kedua khusus aksi (POST /containers/{id}/stop|start saja).
+  DOCKER_ACTION_HOST: Joi.string()
+    .uri({ scheme: ['tcp', 'http', 'https'] })
+    .allow('')
+    .optional(),
   DOCKER_SOCKET: Joi.string().default('/var/run/docker.sock'),
   HOST_PROC: Joi.string().default('/proc'),
   HOST_ROOT: Joi.string().default('/'),
@@ -25,6 +30,10 @@ export const validationSchema = Joi.object({
   ALERT_RESTART_WINDOW_MIN: Joi.number().integer().min(1).default(10),
   ALERT_ERROR_COUNT: Joi.number().integer().min(1).default(10),
   ALERT_COOLDOWN_MIN: Joi.number().integer().min(0).default(30),
+  ACTIONS_ENABLED: Joi.boolean().default(false),
+  ACTIONS_PROTECTED_PROJECTS: Joi.string()
+    .allow('')
+    .default('samantha-monitoring-be,samantha-monitoring-fe'),
   LOG_TAIL: Joi.number().integer().min(0).max(5000).default(500),
   LOG_SSE_MAX_LINES_PER_SEC: Joi.number().integer().min(1).default(50),
 });

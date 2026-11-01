@@ -66,3 +66,25 @@ model Alert {
   @@index([resolvedAt])
   @@map("alerts")
 }
+
+enum ContainerActionKind {
+  STOP
+  START
+}
+
+// Audit aksi tulis dari dashboard (stop/start). Belum ada login, jadi
+// pelaku dicatat sebatas IP + user agent. Retensi 365 hari.
+model ContainerAction {
+  id        String              @id @default(cuid())
+  action    ContainerActionKind
+  container String              @db.VarChar(128)
+  ok        Boolean
+  // Pesan Docker kalau gagal.
+  error     String?
+  ip        String?             @db.VarChar(64)
+  userAgent String?             @db.VarChar(255)
+  createdAt DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@map("container_actions")
+}

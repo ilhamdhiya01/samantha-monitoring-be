@@ -23,3 +23,15 @@ export const toAlertDto = (alert: Alert): AlertDto => ({
   container: alert.container,
   firedAt: alert.firedAt.toISOString(),
 });
+
+// Kontrak dengan FE (AlertHistoryItem di alert.types.ts): termasuk yang
+// sudah selesai.
+export interface AlertHistoryDto extends AlertDto {
+  // ISO; null = masih aktif.
+  resolvedAt: string | null;
+}
+
+export const toAlertHistoryDto = (alert: Alert): AlertHistoryDto => ({
+  ...toAlertDto(alert),
+  resolvedAt: alert.resolvedAt?.toISOString() ?? null,
+});

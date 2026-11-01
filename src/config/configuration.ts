@@ -13,6 +13,22 @@ export default () => ({
     // membuat Docker API read-only (lihat CLAUDE.md "Keamanan").
     host: process.env.DOCKER_HOST ?? '',
     socketPath: process.env.DOCKER_SOCKET ?? '/var/run/docker.sock',
+    // Proxy aksi (stop/start). Kosong + DOCKER_HOST terisi = aksi tidak
+    // tersedia (proxy baca menolak POST); keduanya kosong = socket langsung.
+    actionHost: process.env.DOCKER_ACTION_HOST ?? '',
+  },
+  actions: {
+    // Stop/start dari dashboard. Mati secara default — belum ada login.
+    enabled: process.env.ACTIONS_ENABLED === 'true',
+    // Compose project yang tidak boleh di-stop dari dashboard: monitor
+    // sendiri (BE + FE) — mematikannya memutus dashboard.
+    protectedProjects: (
+      process.env.ACTIONS_PROTECTED_PROJECTS ??
+      'samantha-monitoring-be,samantha-monitoring-fe'
+    )
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean),
   },
   host: {
     // /proc dan / milik host, di-mount read-only ke container monitor.

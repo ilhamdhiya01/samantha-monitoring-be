@@ -2,7 +2,9 @@ import {
   cpuPercentFromStats,
   memoryFromStats,
   splitImageRef,
+  toContainerHealth,
   toContainerStatus,
+  toDockerTime,
 } from './container-stats';
 
 describe('container-stats', () => {
@@ -49,5 +51,19 @@ describe('container-stats', () => {
   it('maps Docker states', () => {
     expect(toContainerStatus('running')).toBe('running');
     expect(toContainerStatus('removing')).toBe('dead');
+  });
+
+  it('maps healthcheck status, without healthcheck = null', () => {
+    expect(toContainerHealth('unhealthy')).toBe('unhealthy');
+    expect(toContainerHealth('none')).toBeNull();
+    expect(toContainerHealth(undefined)).toBeNull();
+  });
+
+  it("treats Docker's zero time as never", () => {
+    expect(toDockerTime('0001-01-01T00:00:00Z')).toBeNull();
+    expect(toDockerTime('2026-10-29T10:42:01.2Z')).toBe(
+      '2026-10-29T10:42:01.2Z',
+    );
+    expect(toDockerTime(undefined)).toBeNull();
   });
 });

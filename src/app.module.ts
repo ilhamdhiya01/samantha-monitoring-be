@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CommonModule } from './common/common.module';
+import { ActionsModule } from './modules/actions/actions.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { ContainersModule } from './modules/containers/containers.module';
 import { DockerModule } from './modules/docker/docker.module';
@@ -23,6 +24,7 @@ import { SystemModule } from './modules/system/system.module';
     MetricsModule,
     LogsModule,
     AlertsModule,
+    ActionsModule,
     StreamModule,
     RetentionModule,
     HealthModule,

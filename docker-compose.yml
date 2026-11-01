@@ -31,6 +31,25 @@ services:
     networks: [monitor]
     logging: *logging
 
+  # Khusus aksi stop/start dari dashboard. Proxy baca di atas TIDAK boleh
+  # diberi POST=1: bersama CONTAINERS=1 itu membuka /containers/create dan
+  # exec. Di sini POST=1 tapi CONTAINERS=0, jadi yang lolos hanya
+  # POST /containers/{id}/stop dan /start (ALLOW_*); list, create, exec,
+  # kill, delete ditolak 403. Aksi tetap mati sampai ACTIONS_ENABLED=true.
+  docker-action-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    restart: unless-stopped
+    environment:
+      POST: 1
+      CONTAINERS: 0
+      ALLOW_STOP: 1
+      ALLOW_START: 1
+      EVENTS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [monitor]
+    logging: *logging
+
   # Terpisah dari Postgres aplikasi lain: container, volume, port sendiri.
   # Port 5432 tidak di-publish (dev: lihat docker-compose.override.yml).
   monitor-db:
@@ -78,6 +97,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://monitor:${POSTGRES_PASSWORD}@monitor-db:5432/monitor_db
       DOCKER_HOST: tcp://docker-proxy:2375
+      DOCKER_ACTION_HOST: tcp://docker-action-proxy:2375
       HOST_PROC: /host/proc
       HOST_ROOT: /host
     # Loopback saja — belum ada login. Akses lewat SSH tunnel; FE
@@ -92,6 +112,8 @@ services:
       monitor-migrate:
         condition: service_completed_successfully
       docker-proxy:
+        condition: service_started
+      docker-action-proxy:
         condition: service_started
     healthcheck:
       test:

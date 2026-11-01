@@ -64,16 +64,24 @@ export class ErrorCounterService implements OnModuleDestroy {
     return result;
   }
 
-  async hourly(now = Date.now(), hours = 24): Promise<ErrorHourDto[]> {
+  // Tanpa `container` = semua container dijumlahkan.
+  async hourly(
+    container?: string,
+    now = Date.now(),
+    hours = 24,
+  ): Promise<ErrorHourDto[]> {
     const since = new Date(startOfHour(now) - (hours - 1) * HOUR_MS);
     const rows = await this.prisma.errorHourly.findMany({
-      where: { hour: { gte: since } },
+      where: { hour: { gte: since }, ...(container ? { container } : {}) },
       select: { hour: true, errors: true, warnings: true },
     });
     // Hitungan yang belum di-flush ikut dijumlahkan supaya grafik terkini.
+    const pending = [...this.pending.values()].filter(
+      (entry) => !container || entry.container === container,
+    );
     const counts: HourCount[] = [
       ...rows.map((row) => ({ ...row, hour: row.hour.getTime() })),
-      ...this.pending.values(),
+      ...pending,
     ];
     return buildHourSeries(counts, now, hours);
   }

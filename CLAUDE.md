@@ -44,6 +44,7 @@ src/
     metrics/     hitungan error/warning per jam
     alerts/      evaluator + Telegram + GET /alerts/active
     retention/   cron harian
+    actions/     stop/start container (flag ACTIONS_ENABLED) + audit container_actions
     health/      GET /health untuk uptime monitor eksternal
 ```
 
@@ -53,16 +54,20 @@ Pola modul sama dengan critiq-be: `*.module.ts`, `*.controller.ts`, `*.service.t
 
 Tipe harus sama dengan `dashboard-monitoring-fe/src/lib/types/*` (DTO di `modules/*/dto/` menyebut file FE-nya). Ubah keduanya bersamaan.
 
-| Endpoint                     | DTO                                                                                                        |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `GET /system`                | `SystemStatsDto`                                                                                           |
-| `GET /containers`            | `ContainerDto[]`                                                                                           |
-| `GET /images`                | `ImageSummaryDto`                                                                                          |
-| `GET /alerts/active`         | `AlertDto[]` (enum lowercase)                                                                              |
-| `GET /metrics/errors-hourly` | `ErrorHourDto[]` (24 bucket)                                                                               |
-| `GET /stream`                | SSE: `ready`, `stats` (`SystemStatsDto`), `containers` (`ContainerDto[]`), `alerts` (`AlertDto[]`), `ping` |
-| `GET /logs/:name/stream`     | SSE: `log` (`LogLineDto`), `skipped` (`{ count }`), `ping`                                                 |
-| `GET /health`                | `{ status, db, docker }`, 503 kalau DB/Docker mati                                                         |
+| Endpoint                                | DTO                                                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `GET /system`                           | `SystemStatsDto`                                                                                               |
+| `GET /containers`                       | `ContainerDto[]`                                                                                               |
+| `GET /images`                           | `ImageSummaryDto`                                                                                              |
+| `GET /alerts/active`                    | `AlertDto[]` (enum lowercase)                                                                                  |
+| `GET /alerts/history`                   | `AlertHistoryDto[]` (maks. 50, terbaru dulu, `?container=`)                                                    |
+| `GET /metrics/errors-hourly`            | `ErrorHourDto[]` (24 bucket, `?container=`; tanpa itu semua container dijumlahkan)                             |
+| `GET /deploys`                          | `DeployEventDto[]` (maks. 20, terbaru dulu, `?container=`)                                                     |
+| `GET /stream`                           | SSE: `ready`, `stats` (`SystemStatsDto`), `containers` (`ContainerDto[]`), `alerts` (`AlertDto[]`), `ping`     |
+| `GET /logs/:name/stream`                | SSE: `log` (`LogLineDto`), `skipped` (`{ count }`), `ping`                                                     |
+| `GET /actions/status`                   | `ActionStatusDto` (`enabled`, `disabledReason`, `protectedProjects`)                                           |
+| `POST /containers/:name/stop` / `start` | body JSON `{ confirm: <nama> }` → `ContainerActionResultDto`; 403 kalau mati/terlindungi, 415 kalau bukan JSON |
+| `GET /health`                           | `{ status, db, docker }`, 503 kalau DB/Docker mati                                                             |
 
 ## Data & alur
 
@@ -75,6 +80,8 @@ Tipe harus sama dengan `dashboard-monitoring-fe/src/lib/types/*` (DTO di `module
 - **Id baris** = timestamp Docker 9 digit + `#urutan` (`2026-10-29T10:42:01.221234567Z#0`) — bisa dibandingkan, stateless.
 - **SSE `/stream`** (`modules/stream/`) menggantikan polling FE untuk system, containers dan alert aktif. `SystemService`/`ContainersService` mengumumkan setiap hasil poll lewat `updates$`; `AlertsService.markChanged()` dipanggil evaluator saat alert muncul/pulih. Saat tersambung (juga reconnect) kondisi terkini dikirim duluan → FE tidak perlu refetch. Payload selalu data lengkap, bukan selisih, jadi event yang hilang tidak membuat state FE salah. REST `/system`, `/containers`, `/alerts/active` tetap ada (load awal, fallback saat stream putus).
 - **Riwayat deploy** = event `container create` yang ditangkap saat monitor jalan. Docker tidak menyimpan event lama → riwayat mulai sejak monitor dipasang.
+- **Field container dari inspect**: `project`/`service` dari label `com.docker.compose.*` (FE mengelompokkan sidebar per project), `health` dari `State.Health` (null = tanpa healthcheck), `oomKilled` (satu-satunya pembeda exit 137 OOM vs `docker kill`), `finishedAt`, `restartPolicy`.
+- **Halaman container di FE** fokus ke container itu: grafik error per container + garis deploy, riwayat (deploy + alert). Alert aktif dan resource per container tetap lintas container.
 
 ### Penyimpangan dari PRD (sengaja)
 
@@ -99,7 +106,9 @@ Tipe harus sama dengan `dashboard-monitoring-fe/src/lib/types/*` (DTO di `module
 ## Keamanan
 
 - **Socket Docker = root di VPS.** Mount `:ro` **tidak** membuat API read-only (hanya melarang mengganti file socket; `POST /containers/create` tetap jalan). Produksi wajib lewat `docker-proxy` (tecnativa/docker-socket-proxy, `POST=0`); `monitor-api` tidak pernah me-mount socket.
-- Belum ada login → jangan publish port 3001 / jangan pasang di subdomain publik sebelum auth ada.
+- **Aksi stop/start lewat proxy kedua** `docker-action-proxy` (`POST=1`, `CONTAINERS=0`, `ALLOW_STOP=1`, `ALLOW_START=1`). Jangan pernah memberi `POST=1` ke `docker-proxy`: rule pertama proxy menolak semua non-GET kecuali `POST=1`, dan bersama `CONTAINERS=1` itu membuka create/exec/kill/delete. Teruji (1 Nov 2026, image 0.3): proxy aksi meloloskan hanya start/stop (204); list, create, exec, kill, DELETE, pull image → 403.
+- **Pengaman aksi** (belum ada login): mati secara default (`ACTIONS_ENABLED=false`); body wajib JSON (form/text lintas situs = CSRF tanpa preflight → 415/400) dengan `confirm` = nama container; project di `ACTIONS_PROTECTED_PROJECTS` (monitor BE + FE) ditolak; setiap aksi dicatat ke `container_actions` (IP + user agent, retensi 365 hari) dan log `container.action`. Stop dari dashboard tidak memicu alert `CONTAINER_EXITED` (event `kill` mendahului `die`).
+- Belum ada login → jangan publish port 3001 / jangan pasang di subdomain publik sebelum auth ada. Aktifkan `ACTIONS_ENABLED` hanya selama akses cuma lewat SSH tunnel.
 - Baris log dikirim sebagai JSON teks; FE merender sebagai teks.
 - Token Telegram hanya dari env, tidak pernah di-log.
 - `monitor-db` tidak di-publish di produksi (override dev: `127.0.0.1:5443`).
@@ -112,4 +121,4 @@ Tipe harus sama dengan `dashboard-monitoring-fe/src/lib/types/*` (DTO di `module
 
 ## Belum ada (sesuai scope)
 
-Login/auth, aksi tulis v1.1 (rollback, prune, restart — butuh proxy dengan POST terbatas + konfirmasi + audit log), riwayat alert (endpoint), aturan level per container, webhook deploy dari CI (commit hash), service `monitor-web` (Nginx untuk FE) di compose, `pg_dump` mingguan.
+Login/auth (pelaku aksi baru tercatat sebatas IP), aksi tulis lain (rollback, prune, restart — restart butuh `ALLOW_RESTARTS` yang sekaligus membuka kill), halaman riwayat alert lintas container di FE (endpoint sudah ada), aturan level per container, webhook deploy dari CI (commit hash), service `monitor-web` (Nginx untuk FE) di compose, `pg_dump` mingguan.
